@@ -403,8 +403,8 @@ fn add_ridge(rect: &FRect, surface: &mut [f64; 4], h: f64) {
 
 fn rasterize(leaves: &[Leaf], width: usize, height: usize, options: RenderOptions) -> Vec<u8> {
     let mut rgba = vec![0u8; width * height * 4];
-    for px in rgba.chunks_exact_mut(4) {
-        px.copy_from_slice(&[EMPTY_BG[0], EMPTY_BG[1], EMPTY_BG[2], 255]);
+    for px in rgba.as_chunks_mut::<4>().0 {
+        *px = [EMPTY_BG[0], EMPTY_BG[1], EMPTY_BG[2], 255];
     }
     if width == 0 || height == 0 {
         return rgba;
