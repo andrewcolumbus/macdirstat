@@ -148,7 +148,7 @@ pub fn render(size: u32) -> Vec<u8> {
     let coverage = |d: f64| (0.5 - d / px).clamp(0.0, 1.0);
 
     let mut rgba = vec![0u8; (size * size * 4) as usize];
-    for (i, out) in rgba.chunks_exact_mut(4).enumerate() {
+    for (i, out) in rgba.as_chunks_mut::<4>().0.iter_mut().enumerate() {
         let x = (f64::from(i as u32 % size) + 0.5) * px;
         let y = (f64::from(i as u32 / size) + 0.5) * px;
 
