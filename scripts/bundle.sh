@@ -4,6 +4,9 @@
 # Signing: uses $MACDIRSTAT_SIGN_IDENTITY, else the first "Developer ID
 # Application" identity in the keychain, else an ad-hoc signature.
 #
+# MACDIRSTAT_UNIVERSAL=1 builds for arm64 and x86_64 and merges them with lipo.
+# MACDIRSTAT_DMG=1 also packages MacDirStat.dmg next to the app.
+#
 # Notarization (Developer ID only): set MACDIRSTAT_NOTARIZE=1 after storing
 # credentials once with
 #   xcrun notarytool store-credentials macdirstat-notary \
@@ -15,15 +18,24 @@ cd "$(dirname "$0")/.."
 VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
 OUT_DIR=${1:-target/release}
 APP="$OUT_DIR/MacDirStat.app"
+BIN="$APP/Contents/MacOS/MacDirStat"
 
-cargo build --release
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp target/release/macdirstat "$APP/Contents/MacOS/MacDirStat"
+if [[ "${MACDIRSTAT_UNIVERSAL:-0}" == 1 ]]; then
+  rustup target add aarch64-apple-darwin x86_64-apple-darwin
+  cargo build --release --target aarch64-apple-darwin
+  cargo build --release --target x86_64-apple-darwin
+  lipo -create -output "$BIN" \
+    target/aarch64-apple-darwin/release/macdirstat target/x86_64-apple-darwin/release/macdirstat
+else
+  cargo build --release
+  cp target/release/macdirstat "$BIN"
+fi
 
 ICONSET=$(mktemp -d)/MacDirStat.iconset
 mkdir -p "$ICONSET"
-target/release/macdirstat --export-icon "$ICONSET/icon_256x256.png"
+"$BIN" --export-icon "$ICONSET/icon_256x256.png"
 for size in 16 32 128 256; do
   sips -z $size $size "$ICONSET/icon_256x256.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))
@@ -64,18 +76,57 @@ else
   echo "No Developer ID identity found; signed ad hoc"
 fi
 
-if [[ "${MACDIRSTAT_NOTARIZE:-0}" == 1 ]]; then
-  if [[ -z "$IDENTITY" ]]; then
-    echo "Notarization needs a Developer ID signature" >&2
-    exit 1
+NOTARIZE=${MACDIRSTAT_NOTARIZE:-0}
+if [[ "$NOTARIZE" == 1 && -z "$IDENTITY" ]]; then
+  echo "Notarization needs a Developer ID signature" >&2
+  exit 1
+fi
+NOTARY_AUTH=(--keychain-profile "${MACDIRSTAT_NOTARY_PROFILE:-macdirstat-notary}")
+
+# Submits $1 and prints the notary log if Apple rejects it.
+notarize() {
+  local result id status
+  result=$(xcrun notarytool submit "$1" "${NOTARY_AUTH[@]}" --wait --output-format json) || true
+  id=$(plutil -extract id raw - <<<"$result" 2>/dev/null || true)
+  status=$(plutil -extract status raw - <<<"$result" 2>/dev/null || true)
+  echo "Notarization of $(basename "$1"): ${status:-failed} ${id}"
+  if [[ "$status" == Accepted ]]; then
+    return
+  elif [[ -n "$id" ]]; then
+    xcrun notarytool log "$id" "${NOTARY_AUTH[@]}" >&2
+  else
+    echo "$result" >&2
   fi
+  exit 1
+}
+
+if [[ "$NOTARIZE" == 1 ]]; then
   ZIP="$OUT_DIR/MacDirStat-$VERSION.zip"
   ditto -c -k --keepParent "$APP" "$ZIP"
-  xcrun notarytool submit "$ZIP" --keychain-profile "${MACDIRSTAT_NOTARY_PROFILE:-macdirstat-notary}" --wait
+  notarize "$ZIP"
   xcrun stapler staple "$APP"
   rm "$ZIP"
   ditto -c -k --keepParent "$APP" "$ZIP"
   spctl --assess --type execute --verbose "$APP"
   echo "Notarized $ZIP"
+fi
+
+if [[ "${MACDIRSTAT_DMG:-0}" == 1 ]]; then
+  DMG="$OUT_DIR/MacDirStat.dmg"
+  STAGING=$(mktemp -d)
+  ditto "$APP" "$STAGING/MacDirStat.app"
+  ln -s /Applications "$STAGING/Applications"
+  rm -f "$DMG"
+  hdiutil create -volname "MacDirStat $VERSION" -srcfolder "$STAGING" -format UDZO -quiet "$DMG"
+  rm -rf "$STAGING"
+  if [[ -n "$IDENTITY" ]]; then
+    codesign --force --timestamp --sign "$IDENTITY" "$DMG"
+  fi
+  if [[ "$NOTARIZE" == 1 ]]; then
+    notarize "$DMG"
+    xcrun stapler staple "$DMG"
+    spctl --assess --type open --context context:primary-signature --verbose "$DMG"
+  fi
+  echo "Built $DMG"
 fi
 echo "Built $APP"

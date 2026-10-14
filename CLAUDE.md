@@ -30,12 +30,19 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 cargo run --release
 scripts/bundle.sh                       # target/release/MacDirStat.app, Developer ID signed when available
+MACDIRSTAT_UNIVERSAL=1 MACDIRSTAT_DMG=1 scripts/bundle.sh   # universal app + MacDirStat.dmg
 cargo run --release --example bench_scan -- <path>
 cargo run --release --example render_treemap -- <path> out.png
 ```
 
 Run fmt, clippy and tests before committing. CI (`.github/workflows/ci.yml`)
 runs the same three on macOS.
+
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`: it builds a
+universal `MacDirStat.dmg` (ad-hoc signed, not notarized) and publishes a
+GitHub release. The tag must match the `Cargo.toml` version. The README
+download button links to `releases/latest/download/MacDirStat.dmg`, so keep
+that asset name.
 
 ## Rules
 

@@ -1,37 +1,66 @@
 # MacDirStat
 
-A WinDirStat-style disk usage viewer for macOS, written in Rust with
-[egui](https://github.com/emilk/egui).
+[![CI](https://github.com/andrewcolumbus/macdirstat/actions/workflows/ci.yml/badge.svg)](https://github.com/andrewcolumbus/macdirstat/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/andrewcolumbus/macdirstat)](https://github.com/andrewcolumbus/macdirstat/releases/latest)
+[![macOS 11+](https://img.shields.io/badge/macOS-11%2B-blue?logo=apple)](#install)
+[![License: MIT](https://img.shields.io/github/license/andrewcolumbus/macdirstat)](LICENSE)
 
-Every file is drawn as a rectangle sized by the space it takes, colored by its
-extension and shaded with WinDirStat's cushion lighting so the folder
-structure shows through. Large files and folders stand out at a glance.
+A disk usage viewer for macOS, modeled on WinDirStat and written in Rust with
+[egui](https://github.com/emilk/egui). It draws every file as a rectangle
+sized by the space it takes and colored by file type, with WinDirStat's
+cushion shading so you can see the folder structure.
+
+<p align="center">
+  <a href="https://github.com/andrewcolumbus/macdirstat/releases/latest/download/MacDirStat.dmg">
+    <img src="https://img.shields.io/badge/Download_for_macOS-0A84FF?style=for-the-badge&logo=apple&logoColor=white" alt="Download MacDirStat for macOS" height="40">
+  </a>
+</p>
 
 <p align="center">
   <img src="docs/treemap.jpg" alt="Cushion treemap of a home folder" width="800">
 </p>
 
+## Install
+
+Download `MacDirStat.dmg` from the
+[latest release](https://github.com/andrewcolumbus/macdirstat/releases/latest),
+open it and drag MacDirStat to Applications. The app runs natively on Apple
+silicon and Intel Macs with macOS 11 or later.
+
+The release build isn't notarized, so macOS blocks it the first time you open
+it. Click Done, then go to System Settings > Privacy & Security, scroll down
+and click Open Anyway. Or clear the quarantine flag from Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/MacDirStat.app
+```
+
+On first launch MacDirStat opens System Settings so you can give it
+[Full Disk Access](#full-disk-access). macOS ties that grant to the app's
+signature, and each release build has a new one, so turn Full Disk Access
+back on after you update.
+
 ## Features
 
-- **Cushion treemap**: squarified layout with WinDirStat's ridge shading,
-  rendered in parallel on a background thread so the UI stays responsive
-  while you resize.
-- **Directory list**: sortable by name, size, items or modified date, with
-  subtree bars and percentages. It stays in sync with the treemap.
-- **Extension list**: space per file type, with the treemap colors. Click an
-  extension to highlight its files.
-- **Whole-disk accounting**: scanning a volume such as `/` adds
-  `<Free Space>`, the other APFS volumes in the container (Preboot, Recovery,
-  VM, ...) and `<Unknown>` for space the scan could not attribute, so the
-  treemap adds up to what Finder reports as used. Both can be hidden from the
-  View menu.
-- **Fast multithreaded scanner**: walks folders in parallel and lists them
-  with `getattrlistbulk(2)` (one system call per few hundred entries instead
-  of one per file). Hard links are counted once, symlinks are not followed and
-  firmlinked paths on the startup disk are not double counted.
-- **Actions**: Reveal in Finder, Open, Copy Path, Zoom, and Move to Trash
-  (with confirmation). Right-click any rectangle or row for these.
-- **Size metric**: switch between on-disk (allocated) and logical sizes.
+- A squarified treemap with WinDirStat's cushion shading. It renders on a
+  background thread, so resizing the window doesn't block the UI.
+- A directory list you can sort by name, size, item count or modification
+  date, with subtree bars and percentages. Clicking a rectangle expands the
+  list to that file.
+- An extension list showing how much space each file type takes, in its
+  treemap color. Click an extension to highlight its files.
+- Whole-disk accounting. When you scan a volume such as `/`, the treemap gets
+  entries for `<Free Space>`, the other APFS volumes in the container
+  (Preboot, Recovery, VM and others) and `<Unknown>` for used space the scan
+  couldn't attribute. The total then matches what Finder reports. The View
+  menu can hide these entries.
+- A parallel scanner that lists folders with `getattrlistbulk(2)`, which
+  returns a few hundred entries per system call instead of one. Hard links
+  count once, symlinks aren't followed, and firmlinked paths on the startup
+  disk aren't counted twice.
+- Reveal in Finder, Open, Copy Path, Zoom and Move to Trash, from the
+  right-click menu on any rectangle or row. Move to Trash asks first.
+- A choice of on-disk (allocated) or logical sizes.
 
 ### Keyboard
 
@@ -47,63 +76,78 @@ structure shows through. Large files and folders stand out at a glance.
 
 ## Full Disk Access
 
-macOS hides Mail, Messages, Safari, Photos libraries, other apps' containers
-and Time Machine data from apps without Full Disk Access. No API can request
-it, so MacDirStat opens the right page of System Settings on first launch.
-Turn on MacDirStat there, then rescan. Space MacDirStat can't read shows up
-as `<Unknown>`. Some system folders (for example `/private/var/db`) belong to
-root and stay unreadable even with Full Disk Access.
+Without Full Disk Access, macOS hides Mail, Messages, Safari, Photos
+libraries, other apps' containers and Time Machine data from MacDirStat. Apps
+can't request this permission, so MacDirStat opens the right page of System
+Settings instead. Turn MacDirStat on there and rescan. Space MacDirStat can't
+read is counted under `<Unknown>`. A few root-owned system folders, such as
+`/private/var/db`, stay unreadable even with Full Disk Access.
 
 ## Why is my disk full when the folders add up to less?
 
-Scan `/` and look at the synthetic entries:
+Scan `/` and look at the entries in angle brackets:
 
-- `<Preboot volume>`, `<Recovery volume>`, `<VM volume>`: APFS volumes that
-  share the container with your data. The VM volume holds swap files and
-  grows under memory pressure.
-- `<Unknown>`: space used but not visible to the scan. This covers protected
-  folders (grant Full Disk Access to shrink it), root-only system folders,
-  local Time Machine snapshots and file system metadata.
-- `<Free Space>`: what is actually left.
+- `<Preboot volume>`, `<Recovery volume>` and `<VM volume>` are APFS volumes
+  that share the container with your data. The VM volume holds swap files and
+  grows when memory runs short.
+- `<Unknown>` is used space the scan couldn't see: protected folders (Full
+  Disk Access shrinks this), root-only system folders, local Time Machine
+  snapshots and file system metadata.
+- `<Free Space>` is what's left.
 
-## Building
+## Building from source
 
-Requires Rust 1.95 or newer (egui 0.36) on macOS 11 or later.
+You need Rust 1.95 or newer on macOS 11 or later.
 
 ```bash
-cargo run --release                   # run from source
-scripts/bundle.sh                     # build target/release/MacDirStat.app
+cargo run --release     # run from source
+scripts/bundle.sh       # build target/release/MacDirStat.app
 ```
 
-`bundle.sh` signs with the first "Developer ID Application" identity in your
-keychain (or `MACDIRSTAT_SIGN_IDENTITY`), using the hardened runtime, and falls
-back to an ad-hoc signature. A stable signature keeps the Full Disk Access
-grant across rebuilds. To notarize, store credentials once and set
-`MACDIRSTAT_NOTARIZE=1`:
+`bundle.sh` signs the app with the first "Developer ID Application" identity
+in your keychain, using the hardened runtime. If it finds none, it signs ad
+hoc. macOS ties the Full Disk Access grant to the signature, so a stable
+Developer ID keeps the grant across rebuilds. These environment variables
+change what it builds:
+
+| Variable | Effect |
+|----------|--------|
+| `MACDIRSTAT_SIGN_IDENTITY` | Sign with this identity instead |
+| `MACDIRSTAT_UNIVERSAL=1` | Build for arm64 and x86_64 and merge the two with `lipo` |
+| `MACDIRSTAT_DMG=1` | Also package `target/release/MacDirStat.dmg` |
+| `MACDIRSTAT_NOTARIZE=1` | Notarize and staple the app, and the DMG if there is one |
+
+Notarizing needs Apple credentials. Store them once in the keychain:
 
 ```bash
 xcrun notarytool store-credentials macdirstat-notary --apple-id <apple id> --team-id <team id>
-MACDIRSTAT_NOTARIZE=1 scripts/bundle.sh
+MACDIRSTAT_NOTARIZE=1 MACDIRSTAT_DMG=1 scripts/bundle.sh
 ```
 
-Other tools:
+There are also two example programs:
 
 ```bash
-cargo run --release --example bench_scan -- ~             # time a scan
-cargo run --release --example render_treemap -- ~ out.png  # render a treemap headlessly
+cargo run --release --example bench_scan -- ~              # time a scan
+cargo run --release --example render_treemap -- ~ out.png  # render a treemap without the UI
 ```
 
-Set `MACDIRSTAT_THREADS` to change the walker thread count,
-`MACDIRSTAT_BACKEND=std` to list folders with `readdir` + `lstat` instead of
-`getattrlistbulk`, and `MACDIRSTAT_TIMING=1` to print scan phase timings.
+`MACDIRSTAT_THREADS` sets the walker thread count, `MACDIRSTAT_BACKEND=std`
+lists folders with `readdir` and `lstat` instead of `getattrlistbulk`, and
+`MACDIRSTAT_TIMING=1` prints how long each scan phase took.
 
 ### Scan speed
 
-On the first scan after a while, macOS checks access to each folder in
-`~/Library/Containers` through a system service. That takes roughly 15 ms per
-app container, and the checks run one at a time whatever the thread count,
-so a home folder with hundreds of containers can take several extra seconds.
-Later scans hit the system's cache and run much faster.
+The first scan in a while is slower. macOS asks a system service whether
+MacDirStat may read each folder in `~/Library/Containers`. Each check takes
+about 15 ms and they run one at a time, whatever the thread count, so a home
+folder with hundreds of app containers adds several seconds. The system
+caches the answers, so later scans are much faster.
+
+## Releasing
+
+Bump `version` in `Cargo.toml`, commit, then push a matching `vX.Y.Z` tag. The
+[release workflow](.github/workflows/release.yml) builds a universal
+`MacDirStat.dmg`, signed ad hoc, and publishes it as a GitHub release.
 
 ## Credits
 
