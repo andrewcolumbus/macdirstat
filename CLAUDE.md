@@ -20,7 +20,7 @@ surfaces, blue selection, green readouts).
 | `src/access.rs` | Full Disk Access detection and the Settings deep link |
 | `src/app.rs` | eframe app: toolbar, lists, treemap canvas, modals, shortcuts |
 | `src/theme.rs` | Dark palette, fonts, spacing, panel headers |
-| `src/icon.rs` | App icon (rendered treemap tile) and a minimal PNG encoder |
+| `src/icon.rs` | App icon: Icon Composer `.icon` source (Liquid Glass, via actool) and the flat legacy-grid render; minimal PNG encoder |
 
 ## Commands
 
@@ -57,5 +57,8 @@ that asset name.
 - A folder's zero entry count from `getattrlistbulk` is only trusted on
   writable APFS and after an `lstat` link-count check: the sealed system
   volume's firmlink stubs and MobileAsset graft points report zero entries.
+- The bundled app must not set a runtime icon: eframe's `setApplicationIconImage`
+  would replace the Liquid Glass Dock icon with a flat bitmap (`icon::in_app_bundle`).
+  CI fails if `Assets.car` is missing from the bundle.
 - Full Disk Access cannot be requested programmatically; the grant is tied to
   the code signature, so keep a stable Developer ID signature for testing.

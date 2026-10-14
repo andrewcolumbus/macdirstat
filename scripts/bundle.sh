@@ -33,15 +33,37 @@ else
   cp target/release/macdirstat "$BIN"
 fi
 
-ICONSET=$(mktemp -d)/MacDirStat.iconset
+# Flat icon on the legacy 824/1024 grid for macOS 11 to 15.
+ICON_WORK=$(mktemp -d)
+ICONSET="$ICON_WORK/MacDirStat.iconset"
 mkdir -p "$ICONSET"
-"$BIN" --export-icon "$ICONSET/icon_256x256.png"
-for size in 16 32 128 256; do
-  sips -z $size $size "$ICONSET/icon_256x256.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
+"$BIN" --export-icon "$ICON_WORK/icon.png"
+for size in 16 32 128 256 512; do
+  sips -z $size $size "$ICON_WORK/icon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))
-  sips -z $double $double "$ICONSET/icon_256x256.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
+  sips -z $double $double "$ICON_WORK/icon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/MacDirStat.icns"
+
+# Layered Liquid Glass icon for macOS 26 and later. Compiling a .icon needs
+# actool from Xcode 26 or later; without it the app ships the flat icon only.
+ICON_NAME_KEY=
+"$BIN" --export-icon-source "$ICON_WORK/MacDirStat.icon"
+if xcrun --find actool >/dev/null 2>&1 &&
+  xcrun actool "$ICON_WORK/MacDirStat.icon" --compile "$ICON_WORK" \
+    --output-format human-readable-text --notices --warnings --errors \
+    --output-partial-info-plist "$ICON_WORK/partial.plist" \
+    --app-icon MacDirStat --include-all-app-icons \
+    --enable-on-demand-resources NO --development-region en \
+    --target-device mac --minimum-deployment-target 11.0 --platform macosx </dev/null &&
+  [[ -s "$ICON_WORK/Assets.car" ]]; then
+  cp "$ICON_WORK/Assets.car" "$APP/Contents/Resources/Assets.car"
+  ICON_NAME_KEY='<key>CFBundleIconName</key><string>MacDirStat</string>'
+  echo "Compiled the Liquid Glass icon into Assets.car"
+else
+  echo "Could not compile the .icon (needs actool from Xcode 26 or later); shipping the flat icon only"
+fi
+rm -rf "$ICON_WORK"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -53,6 +75,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>io.github.andrewcolumbus.macdirstat</string>
   <key>CFBundleExecutable</key><string>MacDirStat</string>
   <key>CFBundleIconFile</key><string>MacDirStat</string>
+  $ICON_NAME_KEY
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>

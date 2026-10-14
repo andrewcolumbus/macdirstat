@@ -12,7 +12,7 @@ cushion shading so you can see the folder structure.
 
 <p align="center">
   <a href="https://github.com/andrewcolumbus/macdirstat/releases/latest/download/MacDirStat.dmg">
-    <img src="https://img.shields.io/badge/Download_for_macOS-0A84FF?style=for-the-badge&logo=apple&logoColor=white" alt="Download MacDirStat for macOS" height="40">
+    <img src="docs/download.svg" alt="Download MacDirStat for macOS" width="352">
   </a>
 </p>
 
@@ -107,8 +107,15 @@ scripts/bundle.sh       # build target/release/MacDirStat.app
 `bundle.sh` signs the app with the first "Developer ID Application" identity
 in your keychain, using the hardened runtime. If it finds none, it signs ad
 hoc. macOS ties the Full Disk Access grant to the signature, so a stable
-Developer ID keeps the grant across rebuilds. These environment variables
-change what it builds:
+Developer ID keeps the grant across rebuilds.
+
+The app icon is drawn by `src/icon.rs`. With Xcode 26 or later installed,
+`bundle.sh` compiles a layered Icon Composer version into `Assets.car`, which
+macOS 26 and later render with Liquid Glass in the default, dark, clear and
+tinted styles. Without Xcode the app gets only the flat `.icns`, which older
+systems use too.
+
+These environment variables change what it builds:
 
 | Variable | Effect |
 |----------|--------|

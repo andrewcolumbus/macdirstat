@@ -1,110 +1,205 @@
-//! The application icon: a small cushion treemap drawn by the app's own
-//! renderer, inset on a rounded dark tile.
+//! The application icon: a flat squarified treemap on a dark tile.
+//!
+//! macOS 26 and later draw the layered Icon Composer document from
+//! `write_icon_source`, compiled into Assets.car, with Liquid Glass lighting
+//! and the default, dark, clear and tinted appearances. Older systems and
+//! unbundled runs use the flat `render`, drawn on Apple's legacy 824/1024 grid
+//! so the Dock does not put it on a gray plate.
 
-use std::path::PathBuf;
+use std::path::Path;
 
-use crate::tree::{NO_EXT, NO_NODE, Node, NodeId, NodeKind, ROOT, SizeMetric, Tree};
-use crate::treemap::{self, RenderOptions};
+use crate::treemap::{self, FRect};
 
-const SIZE: u32 = 256;
-const INSET: u32 = 26;
-const RADIUS: f32 = 48.0;
+/// Icon Composer canvas size in points. The system masks it with the squircle.
+const CANVAS: f64 = 1024.0;
+/// Treemap bounds on the canvas, clear of the mask and the glass rim.
+const CONTENT: FRect = FRect {
+    x0: 172.0,
+    y0: 172.0,
+    x1: 852.0,
+    y1: 852.0,
+};
+const GAP: f64 = 28.0;
+const TILE_RADIUS: f64 = 40.0;
+/// Relative tile sizes, largest first; colors follow the extension ranking.
+const SIZES: [u64; 6] = [34, 22, 16, 12, 9, 8];
+const BACKGROUND: [u8; 3] = [30, 30, 30];
+/// Legacy grid: an 824 px squircle centered in the 1024 px image.
+const BODY_INSET: f64 = 100.0;
+const BODY_RADIUS: f64 = 185.4;
+const SHADOW_OFFSET: f64 = 12.0;
+const SHADOW_BLUR: f64 = 28.0;
+const SHADOW_ALPHA: f64 = 0.35;
 
-fn dir(tree: &mut Tree, parent: NodeId) -> NodeId {
-    let id = tree.push(Node {
-        name: "d".into(),
-        parent,
-        children: Vec::new(),
-        logical: 0,
-        allocated: 0,
-        mtime: 0,
-        files: 0,
-        dirs: 0,
-        ext: NO_EXT,
-        kind: NodeKind::Dir,
-        flags: 0,
-    });
-    if parent != NO_NODE {
-        tree.nodes[parent as usize].children.push(id);
+#[derive(Clone, Copy, Debug)]
+pub struct Tile {
+    pub rect: FRect,
+    pub color: [u8; 3],
+}
+
+/// The treemap tiles in canvas coordinates, `GAP` apart, with their outer
+/// edges on `CONTENT`.
+pub fn tiles() -> Vec<Tile> {
+    let half = GAP / 2.0;
+    let grown = FRect::new(
+        CONTENT.x0 - half,
+        CONTENT.y0 - half,
+        CONTENT.x1 + half,
+        CONTENT.y1 + half,
+    );
+    treemap::squarify(&SIZES, grown)
+        .into_iter()
+        .map(|(i, r)| Tile {
+            rect: FRect::new(r.x0 + half, r.y0 + half, r.x1 - half, r.y1 - half),
+            color: treemap::ext_color(i as u32),
+        })
+        .collect()
+}
+
+/// Write an Icon Composer document (a `.icon` folder) for `actool`: one SVG
+/// layer per tile in a single lit group over a solid background.
+pub fn write_icon_source(dir: &Path) -> std::io::Result<()> {
+    let assets = dir.join("Assets");
+    std::fs::create_dir_all(&assets)?;
+    let tiles = tiles();
+    let mut layers = Vec::with_capacity(tiles.len());
+    for (i, tile) in tiles.iter().enumerate() {
+        let image = format!("tile{i}.svg");
+        std::fs::write(assets.join(&image), tile_svg(tile))?;
+        // Tinted icons are monochrome; distinct grays keep the tiles apart.
+        let gray = 1.0 - 0.08 * i as f64;
+        layers.push(serde_json::json!({
+            "name": format!("tile{i}"),
+            "image-name": image,
+            "fill-specializations": [{
+                "appearance": "tinted",
+                "value": { "solid": format!("gray:{gray:.5},1.00000") },
+            }],
+        }));
     }
-    id
-}
-
-fn file(tree: &mut Tree, parent: NodeId, ext: &str, size: u64) {
-    let ext = tree.record_ext(ext, size, size);
-    let id = tree.push(Node {
-        name: "f".into(),
-        parent,
-        children: Vec::new(),
-        logical: size,
-        allocated: size,
-        mtime: 0,
-        files: 1,
-        dirs: 0,
-        ext,
-        kind: NodeKind::File,
-        flags: 0,
+    let doc = serde_json::json!({
+        "fill-specializations": [
+            { "value": { "solid": srgb(BACKGROUND) } },
+            { "appearance": "dark", "value": "system-dark" },
+        ],
+        "groups": [{
+            "layers": layers,
+            "lighting": "individual",
+            "specular": true,
+            "shadow": { "kind": "neutral", "opacity": 0.5 },
+            "translucency": { "enabled": false, "value": 0.5 },
+        }],
+        "supported-platforms": { "squares": ["macOS"] },
     });
-    tree.nodes[parent as usize].children.push(id);
+    let json = serde_json::to_string_pretty(&doc).map_err(std::io::Error::other)?;
+    std::fs::write(dir.join("icon.json"), json)
 }
 
-fn sample_tree() -> Tree {
-    let mut tree = Tree::new(PathBuf::from("/"), SizeMetric::Logical);
-    dir(&mut tree, NO_NODE);
-    let a = dir(&mut tree, ROOT);
-    file(&mut tree, a, "mov", 420);
-    file(&mut tree, a, "jpg", 160);
-    file(&mut tree, a, "png", 90);
-    let b = dir(&mut tree, ROOT);
-    file(&mut tree, b, "jpg", 220);
-    file(&mut tree, b, "zip", 120);
-    file(&mut tree, b, "mov", 70);
-    let c = dir(&mut tree, b);
-    file(&mut tree, c, "png", 60);
-    file(&mut tree, c, "app", 40);
-    file(&mut tree, ROOT, "zip", 150);
-    file(&mut tree, ROOT, "dmg", 110);
-    file(&mut tree, ROOT, "app", 80);
-    tree.aggregate();
-    tree.sort_all();
-    tree
+fn srgb(c: [u8; 3]) -> String {
+    let [r, g, b] = c.map(|v| f64::from(v) / 255.0);
+    format!("srgb:{r:.5},{g:.5},{b:.5},1.00000")
 }
 
-pub fn app_icon() -> egui::IconData {
-    let tree = sample_tree();
-    let inner = SIZE - 2 * INSET;
-    let map = treemap::render(&tree, ROOT, inner, inner, RenderOptions::default());
+fn tile_svg(tile: &Tile) -> String {
+    let r = tile.rect;
+    let [red, green, blue] = tile.color;
+    format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1024\" height=\"1024\" viewBox=\"0 0 1024 1024\">\
+         <rect x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\" rx=\"{TILE_RADIUS}\" \
+         fill=\"#{red:02x}{green:02x}{blue:02x}\"/></svg>\n",
+        r.x0,
+        r.y0,
+        r.width(),
+        r.height(),
+    )
+}
 
-    let mut rgba = vec![0u8; (SIZE * SIZE * 4) as usize];
-    let half = SIZE as f32 / 2.0;
-    let edge = half - 8.0;
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            // Rounded-square mask with a 1 px soft edge.
-            let dx = ((x as f32 + 0.5 - half).abs() - (edge - RADIUS)).max(0.0);
-            let dy = ((y as f32 + 0.5 - half).abs() - (edge - RADIUS)).max(0.0);
-            let dist = (dx * dx + dy * dy).sqrt() - RADIUS;
-            let alpha = (0.5 - dist).clamp(0.0, 1.0);
-            if alpha <= 0.0 {
+/// Signed distance from `(x, y)` to a rounded rectangle; negative inside.
+fn rounded_rect_distance(x: f64, y: f64, r: FRect, radius: f64) -> f64 {
+    let qx = (x - (r.x0 + r.x1) / 2.0).abs() - (r.width() / 2.0 - radius);
+    let qy = (y - (r.y0 + r.y1) / 2.0).abs() - (r.height() / 2.0 - radius);
+    qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - radius
+}
+
+/// Flat RGBA render on the legacy grid, `size` pixels square: the tiles on a
+/// dark squircle with a drop shadow, each tile lit from the top like the
+/// glass version.
+pub fn render(size: u32) -> Vec<u8> {
+    let px = CANVAS / f64::from(size);
+    let body = FRect::new(
+        BODY_INSET,
+        BODY_INSET,
+        CANVAS - BODY_INSET,
+        CANVAS - BODY_INSET,
+    );
+    let k = body.width() / CANVAS;
+    let tiles: Vec<Tile> = tiles()
+        .into_iter()
+        .map(|t| Tile {
+            rect: FRect::new(
+                body.x0 + t.rect.x0 * k,
+                body.y0 + t.rect.y0 * k,
+                body.x0 + t.rect.x1 * k,
+                body.y0 + t.rect.y1 * k,
+            ),
+            ..t
+        })
+        .collect();
+    let coverage = |d: f64| (0.5 - d / px).clamp(0.0, 1.0);
+
+    let mut rgba = vec![0u8; (size * size * 4) as usize];
+    for (i, out) in rgba.chunks_exact_mut(4).enumerate() {
+        let x = (f64::from(i as u32 % size) + 0.5) * px;
+        let y = (f64::from(i as u32 / size) + 0.5) * px;
+
+        let mut rgb = BACKGROUND.map(f64::from);
+        for t in &tiles {
+            let d = rounded_rect_distance(x, y, t.rect, TILE_RADIUS * k);
+            let a = coverage(d);
+            if a <= 0.0 {
                 continue;
             }
-            let o = ((y * SIZE + x) * 4) as usize;
-            let inside = x >= INSET && y >= INSET && x < SIZE - INSET && y < SIZE - INSET;
-            let rgb = if inside {
-                let m = (((y - INSET) * inner + (x - INSET)) * 4) as usize;
-                [map.rgba[m], map.rgba[m + 1], map.rgba[m + 2]]
-            } else {
-                [30, 30, 30]
-            };
-            rgba[o..o + 3].copy_from_slice(&rgb);
-            rgba[o + 3] = (alpha * 255.0) as u8;
+            // Brighter toward the top, with a specular rim along the edge.
+            let v = (y - t.rect.y0) / t.rect.height();
+            let rim = (1.0 + d / 6.0).clamp(0.0, 1.0) * (1.0 - v).powi(2) * 0.45;
+            let lift = 1.08 - 0.12 * v;
+            for (c, &base) in rgb.iter_mut().zip(&t.color) {
+                let lit = (f64::from(base) * lift).min(255.0);
+                let lit = lit + (255.0 - lit) * rim;
+                *c += (lit - *c) * a;
+            }
+        }
+
+        let a = coverage(rounded_rect_distance(x, y, body, BODY_RADIUS));
+        let d = rounded_rect_distance(x, y - SHADOW_OFFSET, body, BODY_RADIUS);
+        let shadow = SHADOW_ALPHA * (0.5 - d / SHADOW_BLUR).clamp(0.0, 1.0);
+        let alpha = a + shadow * (1.0 - a);
+        if alpha > 0.0 {
+            for (o, c) in out.iter_mut().zip(rgb) {
+                *o = (c * a / alpha).round() as u8;
+            }
+            out[3] = (alpha * 255.0).round() as u8;
         }
     }
+    rgba
+}
+
+/// The window and Dock icon for unbundled runs (`cargo run`).
+pub fn app_icon() -> egui::IconData {
+    const SIZE: u32 = 512;
     egui::IconData {
-        rgba,
+        rgba: render(SIZE),
         width: SIZE,
         height: SIZE,
     }
+}
+
+/// Whether `exe` runs from inside an .app bundle. There the Dock should show
+/// the bundle's own icon: eframe's runtime icon would replace the Liquid
+/// Glass one with a flat bitmap.
+pub fn in_app_bundle(exe: &Path) -> bool {
+    exe.parent()
+        .is_some_and(|dir| dir.ends_with("Contents/MacOS"))
 }
 
 /// Encode RGBA8 pixels as an uncompressed PNG (stored deflate blocks).
@@ -168,13 +263,80 @@ pub fn encode_png(rgba: &[u8], width: u32, height: u32) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn alpha(rgba: &[u8], size: u32, x: u32, y: u32) -> u8 {
+        rgba[((y * size + x) * 4 + 3) as usize]
+    }
+
     #[test]
-    fn icon_has_transparent_corners_and_opaque_center() {
-        let icon = super::app_icon();
-        assert_eq!(icon.rgba.len(), (icon.width * icon.height * 4) as usize);
-        assert_eq!(icon.rgba[3], 0);
-        let c = ((icon.height / 2 * icon.width + icon.width / 2) * 4 + 3) as usize;
-        assert_eq!(icon.rgba[c], 255);
+    fn tiles_fill_the_content_box_without_touching() {
+        let tiles = tiles();
+        assert_eq!(tiles.len(), SIZES.len());
+        let eps = 1e-6;
+        let min_x = tiles.iter().map(|t| t.rect.x0).fold(f64::MAX, f64::min);
+        let max_x = tiles.iter().map(|t| t.rect.x1).fold(f64::MIN, f64::max);
+        let min_y = tiles.iter().map(|t| t.rect.y0).fold(f64::MAX, f64::min);
+        let max_y = tiles.iter().map(|t| t.rect.y1).fold(f64::MIN, f64::max);
+        assert!((min_x - CONTENT.x0).abs() < eps && (max_x - CONTENT.x1).abs() < eps);
+        assert!((min_y - CONTENT.y0).abs() < eps && (max_y - CONTENT.y1).abs() < eps);
+        for (i, a) in tiles.iter().enumerate() {
+            assert!(a.rect.width() > 2.0 * TILE_RADIUS && a.rect.height() > 2.0 * TILE_RADIUS);
+            for b in &tiles[i + 1..] {
+                let apart_x =
+                    a.rect.x1 + GAP <= b.rect.x0 + eps || b.rect.x1 + GAP <= a.rect.x0 + eps;
+                let apart_y =
+                    a.rect.y1 + GAP <= b.rect.y0 + eps || b.rect.y1 + GAP <= a.rect.y0 + eps;
+                assert!(apart_x || apart_y, "{a:?} and {b:?} are closer than GAP");
+            }
+        }
+    }
+
+    #[test]
+    fn flat_icon_fills_the_legacy_grid_squircle() {
+        let size = 1024;
+        let rgba = render(size);
+        assert_eq!(rgba.len(), (size * size * 4) as usize);
+        // Opaque across the whole 824 px body, edge to edge.
+        assert_eq!(alpha(&rgba, size, 512, 512), 255);
+        assert_eq!(alpha(&rgba, size, 101, 512), 255);
+        assert_eq!(alpha(&rgba, size, 922, 512), 255);
+        assert_eq!(alpha(&rgba, size, 512, 101), 255);
+        // Transparent outside it, apart from the soft shadow below.
+        assert_eq!(alpha(&rgba, size, 0, 0), 0);
+        assert_eq!(alpha(&rgba, size, 120, 120), 0);
+        assert_eq!(alpha(&rgba, size, 512, 80), 0);
+        let below = alpha(&rgba, size, 512, 930);
+        assert!(below > 0 && below < 128, "shadow alpha {below}");
+    }
+
+    #[test]
+    fn icon_source_is_an_icon_composer_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let icon = dir.path().join("MacDirStat.icon");
+        write_icon_source(&icon).unwrap();
+        let doc: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(icon.join("icon.json")).unwrap()).unwrap();
+        assert_eq!(doc["supported-platforms"]["squares"][0], "macOS");
+        assert_eq!(doc["fill-specializations"][1]["appearance"], "dark");
+        let layers = doc["groups"][0]["layers"].as_array().unwrap();
+        assert_eq!(layers.len(), tiles().len());
+        for layer in layers {
+            let name = layer["image-name"].as_str().unwrap();
+            let svg = std::fs::read_to_string(icon.join("Assets").join(name)).unwrap();
+            assert!(svg.contains("viewBox=\"0 0 1024 1024\""), "{svg}");
+            assert!(svg.contains("<rect "), "{svg}");
+        }
+    }
+
+    #[test]
+    fn bundled_runs_keep_the_bundle_icon() {
+        // eframe's runtime icon would cover the Liquid Glass Dock icon.
+        assert!(in_app_bundle(Path::new(
+            "/Applications/MacDirStat.app/Contents/MacOS/MacDirStat"
+        )));
+        assert!(!in_app_bundle(Path::new("target/release/macdirstat")));
+        assert!(!in_app_bundle(Path::new("/usr/local/bin/macdirstat")));
     }
 
     #[test]

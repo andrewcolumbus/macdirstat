@@ -26,6 +26,14 @@ jobs:
         run: cargo test
       - name: Bundle
         run: scripts/bundle.sh
+      - name: Check Liquid Glass icon
+        run: |
+          CAR=target/release/MacDirStat.app/Contents/Resources/Assets.car
+          if [[ ! -s "$CAR" ]]; then
+            echo "::error::Assets.car is missing; the app would get a flat icon on macOS 26 and later"
+            exit 1
+          fi
+          xcrun assetutil --info "$CAR" | grep -E '"(AssetType|Appearance|Name)"' | sort | uniq -c
       - uses: actions/upload-artifact@v4
         with:
           name: MacDirStat.app

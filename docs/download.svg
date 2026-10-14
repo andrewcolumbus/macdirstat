@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="352" height="90" viewBox="0 0 352 90">
+  <title>Download MacDirStat for macOS</title>
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#78aef4"/>
+      <stop offset="0.5" stop-color="#3f84e5"/>
+      <stop offset="0.5" stop-color="#2468d4"/>
+      <stop offset="1" stop-color="#2f7be6"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.12"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.75"/>
+      <stop offset="0.45" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0.18"/>
+    </linearGradient>
+    <clipPath id="shape">
+      <rect x="10" y="6" width="332" height="72" rx="12"/>
+    </clipPath>
+    <filter id="drop" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2.5" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+    <filter id="engrave" x="-5%" y="-20%" width="110%" height="140%">
+      <feDropShadow dx="0" dy="-1" stdDeviation="0.3" flood-color="#062a66" flood-opacity="0.8"/>
+    </filter>
+  </defs>
+
+  <!-- Body: two-tone blue with the hard gloss line at half height. -->
+  <rect x="10" y="6" width="332" height="72" rx="12" fill="url(#fill)" filter="url(#drop)"/>
+  <rect x="10" y="6" width="332" height="36" fill="url(#gloss)" clip-path="url(#shape)"/>
+  <rect x="11" y="7" width="330" height="70" rx="11" fill="none" stroke="url(#rim)" stroke-width="1.5"/>
+  <rect x="10.5" y="6.5" width="331" height="71" rx="11.5" fill="none" stroke="#0c3a86" stroke-width="1"/>
+
+  <g fill="#fff" filter="url(#engrave)">
+    <!-- Arrow dropping into a tray. -->
+    <path d="M46 20h10v17h9l-14 15-14-15h9z"/>
+    <path d="M33 52h4v6h28v-6h4v10H33z"/>
+    <text x="84" y="41" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="21" font-weight="bold">Download for macOS</text>
+    <text x="84" y="61" font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="13" fill-opacity="0.85">MacDirStat.dmg · Free · macOS 11+</text>
+  </g>
+</svg>

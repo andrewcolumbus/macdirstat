@@ -37,6 +37,7 @@ jobs:
         run: |
           scripts/bundle.sh
           lipo -archs target/release/MacDirStat.app/Contents/MacOS/MacDirStat
+          test -s target/release/MacDirStat.app/Contents/Resources/Assets.car
 
       - name: Publish release
         env:
